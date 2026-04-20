@@ -1,5 +1,9 @@
 package veiga.sl.departures.data.repository
 
+import java.time.Duration
+import java.time.Instant
+import java.time.OffsetDateTime
+import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import veiga.sl.departures.data.api.SLService
@@ -84,11 +88,12 @@ class SLRepository(
             val response = api.getTimetableDepartures(url, departuresApiKey)
             if (response.departures != null) {
                 return response.departures.map {
-                    val displayTime = it.realtime ?: it.scheduled ?: ""
+                    val timeString = it.realtime ?: it.scheduled ?: ""
                     Departure(
                         line = it.route?.designation ?: "??",
                         destination = it.route?.direction ?: "Unknown",
-                        displayTime = formatTime(displayTime),
+                        displayTime = formatTime(timeString),
+                        remainingTime = calculateRemainingTime(timeString),
                         transportMode = it.route?.transport_mode ?: "METRO",
                         groupOfLine = null,
                         stopName = stopName,
@@ -100,6 +105,23 @@ class SLRepository(
         }
 
         return emptyList()
+    }
+
+    private fun calculateRemainingTime(isoTime: String): String? {
+        return try {
+            if (isoTime.isBlank()) return null
+            val departure = OffsetDateTime.parse(isoTime).toInstant()
+            val now = Instant.now()
+            val diffMinutes = Duration.between(now, departure).toMinutes()
+
+            when {
+                diffMinutes <= 0 -> "Now"
+                diffMinutes < 60 -> "${diffMinutes} min"
+                else -> null // Too far in the future to show as "remaining"
+            }
+        } catch (e: Exception) {
+            null
+        }
     }
 
     private fun formatTime(isoTime: String): String {

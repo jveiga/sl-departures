@@ -17,6 +17,7 @@ data class Departure(
     val line: String,
     val destination: String,
     val displayTime: String,
+    val remainingTime: String? = null,
     val transportMode: String,
     val groupOfLine: String? = null,
     val stopName: String? = null,

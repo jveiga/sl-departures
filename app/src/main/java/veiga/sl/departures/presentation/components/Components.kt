@@ -96,11 +96,22 @@ fun DepartureItem(
                 style = MaterialTheme.typography.bodyMedium,
             )
         }
-        Text(
-            text = departure.displayTime,
-            style = MaterialTheme.typography.labelMedium,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.secondary,
-        )
+        Column(
+            horizontalAlignment = Alignment.End,
+        ) {
+            departure.remainingTime?.let {
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = if (it == "Now") Color.Green else MaterialTheme.colorScheme.tertiary,
+                )
+            }
+            Text(
+                text = departure.displayTime,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.secondary,
+            )
+        }
     }
 }
