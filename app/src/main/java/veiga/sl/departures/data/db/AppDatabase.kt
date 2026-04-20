@@ -31,7 +31,7 @@ interface FavoriteStopDao {
     suspend fun deleteAll()
 }
 
-@Database(entities = [FavoriteStopEntity::class], version = 1)
+@Database(entities = [FavoriteStopEntity::class], version = 1, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun favoriteStopDao(): FavoriteStopDao
 }
