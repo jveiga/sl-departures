@@ -108,6 +108,7 @@ dependencies {
     implementation(libs.compose.icons.core)
     implementation(libs.compose.icons.extended)
     implementation(libs.security.crypto)
+    implementation(libs.lifecycle.runtime.compose)
     ksp(libs.room.compiler)
 
     androidTestImplementation(platform(libs.compose.bom))
