@@ -7,16 +7,6 @@ import retrofit2.http.Url
 
 interface SLService {
     @GET
-    suspend fun getNearbyStops(
-        @Url url: String,
-        @Query("key") apiKey: String,
-        @Query("originCoordLat") lat: Double,
-        @Query("originCoordLong") long: Double,
-        @Query("maxresults") maxResults: Int = 10,
-        @Query("radius") radius: Int = 1000,
-    ): StopResponse
-
-    @GET
     suspend fun getResrobotNearbyStops(
         @Url url: String,
         @Query("accessId") apiKey: String,
@@ -33,27 +23,6 @@ interface SLService {
         @Query("key") apiKey: String,
     ): TimetableResponse
 }
-
-@Serializable
-data class StopResponse(
-    val LocationList: LocationList? = null,
-    val StatusCode: Int? = null,
-    val Message: String? = null,
-)
-
-@Serializable
-data class LocationList(
-    val StopLocation: List<ApiStop>? = null,
-)
-
-@Serializable
-data class ApiStop(
-    val name: String,
-    val siteid: String,
-    val lat: String,
-    val lon: String,
-    val dist: Int? = null,
-)
 
 @Serializable
 data class ResrobotStopResponse(

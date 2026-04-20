@@ -35,7 +35,6 @@ class SLRepository(
         lat: Double,
         lon: Double,
     ): List<Stop> {
-        // Try Resrobot to get all nearby stops
         try {
             val url = "https://api.resrobot.se/v2.1/location.nearbystops"
             // Use radius=2000 and no specific product filter to get both T-bana and Bus
@@ -47,32 +46,10 @@ class SLRepository(
             }
         } catch (e: Exception) {
             Log.e("SLRepository", "Resrobot nearby stops failed", e)
+            throw Exception("Failed to fetch nearby stations. Check your internet connection or API keys.")
         }
 
-        // Fallback to SL nearbystops
-        val slApiKey = preferences.getApiKey() ?: ""
-        if (slApiKey.isNotBlank()) {
-            val endpoints =
-                listOf(
-                    "https://api.trafiklab.se/sl/nearbystops/v2/nearbystops.json",
-                    "https://api.trafiklab.se/sl/nearbystops/nearbystops.json",
-                )
-
-            for (url in endpoints) {
-                try {
-                    val response = api.getNearbyStops(url, slApiKey, lat, lon)
-                    if (response.LocationList?.StopLocation != null) {
-                        return response.LocationList.StopLocation.map {
-                            Stop(it.siteid, it.name, it.dist)
-                        }
-                    }
-                } catch (e: Exception) {
-                    Log.e("SLRepository", "SL nearby stops failed for $url", e)
-                }
-            }
-        }
-
-        throw Exception("Could not fetch nearby stops from any source. Check your internet connection or API keys.")
+        throw Exception("No stations found nearby.")
     }
 
     suspend fun getDepartures(
