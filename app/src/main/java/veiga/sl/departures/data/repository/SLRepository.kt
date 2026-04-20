@@ -14,8 +14,8 @@ class SLRepository(
     private val dao: FavoriteStopDao,
     private val preferences: PreferencesManager,
 ) {
-    private val resrobotApiKey = "4732b36c-76b9-4aa5-b134-a323d20a7b0e"
-    private val departuresApiKey = "4f323bb9923344b2b8be2ad247d124e2"
+    private val resrobotApiKey = veiga.sl.departures.BuildConfig.RESROBOT_API_KEY
+    private val departuresApiKey = veiga.sl.departures.BuildConfig.DEPARTURES_API_KEY
 
     fun getFavorites(): Flow<List<Stop>> =
         dao.getAllFavorites().map { entities ->

@@ -20,7 +20,7 @@ class PreferencesManager(
 
     fun getApiKey(): String? {
         val key = sharedPreferences.getString("api_key", null)
-        return if (key.isNullOrBlank()) "eb641c93cb8a4604a13a9d76ee0e2c96" else key
+        return if (key.isNullOrBlank()) veiga.sl.departures.BuildConfig.SL_NEARBY_API_KEY else key
     }
 
     fun saveApiKey(key: String) {

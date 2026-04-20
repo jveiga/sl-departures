@@ -1,0 +1,28 @@
+build:
+  maxIssues: 0
+  excludeCorrectable: false
+  weights:
+    # complexity: 2
+    # LongParameterList: 1
+    # style: 1
+    # comments: 1
+
+potential-bugs:
+  active: true
+  HardcodedSecret:
+    active: true
+    # Regex to match potential secrets (like API keys)
+    secretPatterns:
+      - "(?i)key"
+      - "(?i)api"
+      - "(?i)secret"
+      - "(?i)token"
+      - "(?i)password"
+    # Minimum length for a secret to be flagged
+    minLengthToReport: 10
+    # List of allowed strings (false positives)
+    allowedSecrets:
+      - "apiKey"
+      - "api_key"
+      - "api-key"
+      - "ApiKey"
