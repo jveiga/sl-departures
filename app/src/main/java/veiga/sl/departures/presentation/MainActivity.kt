@@ -44,6 +44,7 @@ import veiga.sl.departures.presentation.components.ApiKeyPrompt
 import veiga.sl.departures.presentation.components.DepartureItem
 import veiga.sl.departures.presentation.components.SettingsScreen
 import veiga.sl.departures.presentation.components.StopItem
+import veiga.sl.departures.presentation.theme.SlDeparturesTheme
 import veiga.sl.departures.presentation.viewmodel.MainViewModel
 import veiga.sl.departures.presentation.viewmodel.MainViewModelFactory
 
