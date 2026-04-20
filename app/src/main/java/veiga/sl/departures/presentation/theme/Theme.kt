@@ -4,11 +4,9 @@ import androidx.compose.runtime.Composable
 import androidx.wear.compose.material3.MaterialTheme
 
 @Composable
-fun SLDeparturesTheme(
-    content: @Composable () -> Unit
-) {
+fun SlDeparturesTheme(content: @Composable () -> Unit) {
     MaterialTheme(
         colorScheme = SLColorScheme,
-        content = content
+        content = content,
     )
 }

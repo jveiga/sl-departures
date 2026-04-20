@@ -5,24 +5,29 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import veiga.sl.departures.data.repository.SLRepository
 import veiga.sl.departures.domain.model.Departure
 import veiga.sl.departures.domain.model.Stop
+import veiga.sl.departures.domain.model.TransportMode
 
-class MainViewModel(private val repository: SLRepository) : ViewModel() {
-
+class MainViewModel(
+    private val repository: SLRepository,
+) : ViewModel() {
     var uiState by mutableStateOf(UiState())
         private set
 
-    val favorites: StateFlow<List<Stop>> = repository.getFavorites()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val favorites: StateFlow<List<Stop>> =
+        repository
+            .getFavorites()
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     data class UiState(
+        val wizardStep: WizardStep = WizardStep.PICK_STOPS,
         val nearbyStops: List<Stop> = emptyList(),
         val selectedStop: Stop? = null,
         val departures: List<Departure> = emptyList(),
@@ -30,24 +35,106 @@ class MainViewModel(private val repository: SLRepository) : ViewModel() {
         val error: String? = null,
         val isSettingsOpen: Boolean = false,
         val isApiKeyMissing: Boolean = false,
-        val apiKey: String = ""
+        val apiKey: String = "",
     )
+
+    enum class WizardStep {
+        PICK_STOPS,
+        DEPARTURES,
+    }
 
     init {
         val key = repository.getApiKey()
-        uiState = uiState.copy(
-            isApiKeyMissing = key.isNullOrBlank(),
-            apiKey = key ?: ""
-        )
+        uiState =
+            uiState.copy(
+                isApiKeyMissing = false, // We're using a hardcoded key for departures now
+                apiKey = key ?: "",
+            )
+
+        // Auto-load departures if favorites exist
+        viewModelScope.launch {
+            favorites.collect { favoriteStops ->
+                if (favoriteStops.isNotEmpty() && uiState.wizardStep == WizardStep.PICK_STOPS && uiState.departures.isEmpty()) {
+                    uiState = uiState.copy(wizardStep = WizardStep.DEPARTURES)
+                    loadAllFavoriteDepartures(favoriteStops)
+                }
+            }
+        }
+
+        // Auto-refresh departures every 2 minutes
+        viewModelScope.launch {
+            while (true) {
+                delay(120_000) // 2 minutes
+                if (uiState.wizardStep == WizardStep.DEPARTURES && !uiState.isLoading) {
+                    loadAllFavoriteDepartures(favorites.value)
+                }
+            }
+        }
+    }
+
+    fun setTransportMode(mode: TransportMode) {
+        // No longer used, keeping as stub or removing
+    }
+
+    fun nextStep(favorites: List<Stop> = emptyList()) {
+        when (uiState.wizardStep) {
+            WizardStep.PICK_STOPS -> {
+                uiState = uiState.copy(wizardStep = WizardStep.DEPARTURES)
+                loadAllFavoriteDepartures(favorites)
+            }
+            WizardStep.DEPARTURES -> {}
+        }
+    }
+
+    fun loadAllFavoriteDepartures(favorites: List<Stop>) {
+        viewModelScope.launch {
+            uiState = uiState.copy(isLoading = true, error = null)
+            try {
+                val allDeps = mutableListOf<Departure>()
+                favorites.forEach { stop ->
+                    try {
+                        val deps = repository.getDepartures(stop.id, stop.name)
+                        allDeps.addAll(deps)
+                    } catch (e: Exception) {
+                        // Silently ignore individual stop failures
+                    }
+                }
+                uiState = uiState.copy(departures = allDeps, isLoading = false)
+            } catch (e: Exception) {
+                uiState = uiState.copy(isLoading = false, error = "Failed to load departures")
+            }
+        }
+    }
+
+    fun previousStep() {
+        when (uiState.wizardStep) {
+            WizardStep.PICK_STOPS -> {}
+            WizardStep.DEPARTURES -> {
+                uiState = uiState.copy(wizardStep = WizardStep.PICK_STOPS, selectedStop = null)
+            }
+        }
+    }
+
+    fun clearAll() {
+        viewModelScope.launch {
+            repository.clearAll()
+            uiState =
+                uiState.copy(
+                    wizardStep = WizardStep.PICK_STOPS,
+                    selectedStop = null,
+                    departures = emptyList(),
+                )
+        }
     }
 
     fun saveApiKey(key: String) {
         repository.saveApiKey(key)
-        uiState = uiState.copy(
-            isApiKeyMissing = false, 
-            isSettingsOpen = false,
-            apiKey = key
-        )
+        uiState =
+            uiState.copy(
+                isApiKeyMissing = false,
+                isSettingsOpen = false,
+                apiKey = key,
+            )
     }
 
     fun openSettings() {
@@ -60,19 +147,28 @@ class MainViewModel(private val repository: SLRepository) : ViewModel() {
 
     fun getApiKey(): String = repository.getApiKey() ?: ""
 
-    fun refreshNearbyStops(lat: Double, lon: Double) {
+    fun refreshNearbyStops(
+        lat: Double,
+        lon: Double,
+    ) {
         viewModelScope.launch {
             uiState = uiState.copy(isLoading = true, error = null)
             try {
                 val nearby = repository.getNearbyStops(lat, lon)
                 uiState = uiState.copy(nearbyStops = nearby, isLoading = false)
             } catch (e: Exception) {
-                uiState = uiState.copy(
-                    isLoading = false, 
-                    error = if (e.message?.contains("Unable to resolve host") == true) 
-                        "Network error: No internet or API unreachable" 
-                    else e.message
-                )
+                uiState =
+                    uiState.copy(
+                        isLoading = false,
+                        error =
+                            when {
+                                e.message?.contains("Unable to resolve host") == true -> "No internet (DNS failure)"
+                                e.message?.contains("timeout") == true -> "Connection timeout (slow network)"
+                                e.message?.contains("401") == true -> "Invalid API Key"
+                                e.message?.contains("404") == true -> "Service not found (404)"
+                                else -> e.message ?: "Unknown error"
+                            },
+                    )
             }
         }
     }
@@ -93,12 +189,17 @@ class MainViewModel(private val repository: SLRepository) : ViewModel() {
                 val deps = repository.getDepartures(siteId)
                 uiState = uiState.copy(departures = deps, isLoading = false)
             } catch (e: Exception) {
-                uiState = uiState.copy(
-                    isLoading = false,
-                    error = if (e.message?.contains("Unable to resolve host") == true)
-                        "Network error: No internet or API unreachable"
-                    else e.message
-                )
+                uiState =
+                    uiState.copy(
+                        isLoading = false,
+                        error =
+                            when {
+                                e.message?.contains("Unable to resolve host") == true -> "No internet connection"
+                                e.message?.contains("401") == true -> "Invalid API Key"
+                                e.message?.contains("404") == true -> "Service not found (API error)"
+                                else -> e.message ?: "Unknown error"
+                            },
+                    )
             }
         }
     }

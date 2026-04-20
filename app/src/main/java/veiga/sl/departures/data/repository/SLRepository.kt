@@ -12,28 +12,107 @@ import veiga.sl.departures.domain.model.Stop
 class SLRepository(
     private val api: SLService,
     private val dao: FavoriteStopDao,
-    private val preferences: PreferencesManager
+    private val preferences: PreferencesManager,
 ) {
-    fun getFavorites(): Flow<List<Stop>> {
-        return dao.getAllFavorites().map { entities ->
+    private val resrobotApiKey = "4732b36c-76b9-4aa5-b134-a323d20a7b0e"
+    private val departuresApiKey = "4f323bb9923344b2b8be2ad247d124e2"
+
+    fun getFavorites(): Flow<List<Stop>> =
+        dao.getAllFavorites().map { entities ->
             entities.map { Stop(it.id, it.name, isFavorite = true) }
         }
+
+    suspend fun getNearbyStops(
+        lat: Double,
+        lon: Double,
+    ): List<Stop> {
+        // Try Resrobot to get all nearby stops
+        try {
+            val url = "https://api.resrobot.se/v2.1/location.nearbystops"
+            // Use radius=2000 and no specific product filter to get both T-bana and Bus
+            val response = api.getResrobotNearbyStops(url, resrobotApiKey, lat, lon, products = "")
+
+            val stops = response.stopLocationOrCoordLocation?.mapNotNull { it.StopLocation }
+            if (!stops.isNullOrEmpty()) {
+                return stops.map { Stop(it.extId, it.name, it.dist) }.distinctBy { it.name }
+            }
+        } catch (e: Exception) {
+            // Silently fail
+        }
+
+        // Fallback to SL nearbystops
+        val slApiKey = preferences.getApiKey() ?: ""
+        val endpoints =
+            listOf(
+                "https://api.trafiklab.se/sl/nearbystops/v2/nearbystops.json",
+                "https://api.trafiklab.se/sl/nearbystops/nearbystops.json",
+            )
+
+        for (url in endpoints) {
+            try {
+                val response = api.getNearbyStops(url, slApiKey, lat, lon)
+                if (response.LocationList?.StopLocation != null) {
+                    return response.LocationList.StopLocation.map {
+                        Stop(it.siteid, it.name, it.dist)
+                    }
+                }
+            } catch (e: Exception) {
+                // Silently fail
+            }
+        }
+
+        throw Exception("Could not fetch nearby stops from any source")
     }
 
-    suspend fun getNearbyStops(lat: Double, lon: Double): List<Stop> {
-        val apiKey = preferences.getApiKey() ?: ""
-        val response = api.getNearbyStops(apiKey, lat, lon)
-        return response.LocationList?.StopLocation?.map {
-            Stop(it.siteid, it.name, it.dist)
-        } ?: emptyList()
+    suspend fun getDepartures(
+        siteId: String,
+        stopName: String? = null,
+    ): List<Departure> {
+        // Ensure siteId is 9 digits for Rikshållplats format if it's not already
+        // Some siteIds might already be 9 digits (from Resrobot), e.g. 740021684
+        val rikshållplatsId =
+            if (siteId.length < 9) {
+                "74000$siteId"
+            } else if (siteId.startsWith("74")) {
+                siteId
+            } else {
+                siteId // fallback
+            }
+        val url = "https://realtime-api.trafiklab.se/v1/departures/$rikshållplatsId"
+
+        try {
+            val response = api.getTimetableDepartures(url, departuresApiKey)
+            if (response.departures != null) {
+                return response.departures.map {
+                    val displayTime = it.realtime ?: it.scheduled ?: ""
+                    Departure(
+                        line = it.route?.designation ?: "??",
+                        destination = it.route?.direction ?: "Unknown",
+                        displayTime = formatTime(displayTime),
+                        transportMode = it.route?.transport_mode ?: "METRO",
+                        groupOfLine = null,
+                        stopName = stopName,
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            throw e
+        }
+
+        return emptyList()
     }
 
-    suspend fun getDepartures(siteId: String): List<Departure> {
-        val apiKey = preferences.getApiKey() ?: ""
-        val response = api.getDepartures(apiKey, siteId)
-        return response.ResponseData?.Metros?.map {
-            Departure(it.LineNumber, it.Destination, it.DisplayTime, "METRO", it.GroupOfLine)
-        } ?: emptyList()
+    private fun formatTime(isoTime: String): String {
+        // Simple formatter to extract HH:mm from ISO string 2024-05-20T10:30:00
+        return try {
+            if (isoTime.contains("T")) {
+                isoTime.substringAfter("T").substring(0, 5)
+            } else {
+                isoTime
+            }
+        } catch (e: Exception) {
+            isoTime
+        }
     }
 
     suspend fun toggleFavorite(stop: Stop) {
@@ -49,4 +128,9 @@ class SLRepository(
     }
 
     fun getApiKey(): String? = preferences.getApiKey()
+
+    suspend fun clearAll() {
+        dao.deleteAll()
+        preferences.clear()
+    }
 }

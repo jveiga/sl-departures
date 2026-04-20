@@ -1,10 +1,16 @@
 package veiga.sl.departures.domain.model
 
+enum class TransportMode {
+    METRO,
+    BUS,
+    NONE,
+}
+
 data class Stop(
     val id: String,
     val name: String,
     val distance: Int? = null,
-    val isFavorite: Boolean = false
+    val isFavorite: Boolean = false,
 )
 
 data class Departure(
@@ -12,5 +18,6 @@ data class Departure(
     val destination: String,
     val displayTime: String,
     val transportMode: String,
-    val groupOfLine: String? = null
+    val groupOfLine: String? = null,
+    val stopName: String? = null,
 )

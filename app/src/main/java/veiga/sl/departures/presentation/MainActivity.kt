@@ -4,16 +4,14 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -21,7 +19,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -40,17 +37,13 @@ import androidx.wear.compose.material3.SurfaceTransformation
 import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.lazy.rememberTransformationSpec
 import androidx.wear.compose.material3.lazy.transformedHeight
-import androidx.wear.compose.ui.tooling.preview.WearPreviewDevices
-import androidx.wear.compose.ui.tooling.preview.WearPreviewFontScales
 import com.google.android.gms.location.LocationServices
 import veiga.sl.departures.data.DataModule
-import veiga.sl.departures.domain.model.Departure
 import veiga.sl.departures.domain.model.Stop
 import veiga.sl.departures.presentation.components.ApiKeyPrompt
 import veiga.sl.departures.presentation.components.DepartureItem
 import veiga.sl.departures.presentation.components.SettingsScreen
 import veiga.sl.departures.presentation.components.StopItem
-import veiga.sl.departures.presentation.theme.SLDeparturesTheme
 import veiga.sl.departures.presentation.viewmodel.MainViewModel
 import veiga.sl.departures.presentation.viewmodel.MainViewModelFactory
 
@@ -62,27 +55,27 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            WearApp(viewModel)
+            SlWearApp(viewModel)
         }
     }
 }
 
 @Composable
-fun WearApp(viewModel: MainViewModel) {
+fun SlWearApp(viewModel: MainViewModel) {
     val uiState = viewModel.uiState
     val favorites by viewModel.favorites.collectAsState()
-    
+
     DeparturesScreen(
         uiState = uiState,
         favorites = favorites,
+        onNext = { viewModel.nextStep(it) },
+        onBackStep = { viewModel.previousStep() },
         onStopClick = { viewModel.selectStop(it) },
         onFavoriteClick = { viewModel.toggleFavorite(it) },
-        onRefreshDepartures = { viewModel.selectStop(uiState.selectedStop!!) },
-        onBack = { viewModel.clearSelection() },
+        onRefreshDepartures = { viewModel.loadAllFavoriteDepartures(favorites) },
         onPermissionResult = { lat, lon -> viewModel.refreshNearbyStops(lat, lon) },
         onSaveApiKey = { viewModel.saveApiKey(it) },
-        onLongPressTitle = { viewModel.openSettings() },
-        onCloseSettings = { viewModel.closeSettings() }
+        onCloseSettings = { viewModel.closeSettings() },
     )
 }
 
@@ -90,65 +83,73 @@ fun WearApp(viewModel: MainViewModel) {
 fun DeparturesScreen(
     uiState: MainViewModel.UiState,
     favorites: List<Stop>,
+    onNext: (List<Stop>) -> Unit,
+    onBackStep: () -> Unit,
     onStopClick: (Stop) -> Unit,
     onFavoriteClick: (Stop) -> Unit,
     onRefreshDepartures: () -> Unit,
-    onBack: () -> Unit,
     onPermissionResult: (Double, Double) -> Unit,
     onSaveApiKey: (String) -> Unit,
-    onLongPressTitle: () -> Unit,
-    onCloseSettings: () -> Unit
+    onCloseSettings: () -> Unit,
 ) {
     val context = LocalContext.current
-    val permissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) { permissions ->
-        if (permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
-            permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
-        ) {
-            val fusedLocationClient = LocationServices.getFusedLocationProviderClient(context)
-            if (ContextCompat.checkSelfPermission(
-                    context,
-                    Manifest.permission.ACCESS_COARSE_LOCATION
-                ) == PackageManager.PERMISSION_GRANTED
+    val permissionLauncher =
+        rememberLauncherForActivityResult(
+            ActivityResultContracts.RequestMultiplePermissions(),
+        ) { permissions ->
+            if (permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+                permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
             ) {
-                fusedLocationClient.lastLocation.addOnSuccessListener { location ->
-                    if (location != null) {
-                        onPermissionResult(location.latitude, location.longitude)
-                    } else {
-                        val locationRequest = com.google.android.gms.location.LocationRequest.Builder(
-                            com.google.android.gms.location.Priority.PRIORITY_HIGH_ACCURACY, 1000
-                        ).setMaxUpdates(1).build()
-                        
-                        fusedLocationClient.requestLocationUpdates(
-                            locationRequest,
-                            object : com.google.android.gms.location.LocationCallback() {
-                                override fun onLocationResult(result: com.google.android.gms.location.LocationResult) {
-                                    result.lastLocation?.let {
-                                        onPermissionResult(it.latitude, it.longitude)
+                val fusedLocationClient = LocationServices.getFusedLocationProviderClient(context)
+                if (ContextCompat.checkSelfPermission(
+                        context,
+                        Manifest.permission.ACCESS_COARSE_LOCATION,
+                    ) == PackageManager.PERMISSION_GRANTED
+                ) {
+                    fusedLocationClient.lastLocation.addOnSuccessListener { location ->
+                        if (location != null) {
+                            onPermissionResult(location.latitude, location.longitude)
+                        } else {
+                            val locationRequest =
+                                com.google.android.gms.location.LocationRequest
+                                    .Builder(
+                                        com.google.android.gms.location.Priority.PRIORITY_HIGH_ACCURACY,
+                                        1000,
+                                    ).setMaxUpdates(1)
+                                    .build()
+
+                            fusedLocationClient.requestLocationUpdates(
+                                locationRequest,
+                                object : com.google.android.gms.location.LocationCallback() {
+                                    override fun onLocationResult(result: com.google.android.gms.location.LocationResult) {
+                                        result.lastLocation?.let {
+                                            onPermissionResult(it.latitude, it.longitude)
+                                        }
                                     }
-                                }
-                            },
-                            android.os.Looper.getMainLooper()
-                        )
+                                },
+                                android.os.Looper.getMainLooper(),
+                            )
+                        }
                     }
                 }
             }
         }
-    }
 
     LaunchedEffect(uiState.isApiKeyMissing) {
         if (!uiState.isApiKeyMissing) {
             permissionLauncher.launch(
                 arrayOf(
                     Manifest.permission.ACCESS_FINE_LOCATION,
-                    Manifest.permission.ACCESS_COARSE_LOCATION
-                )
+                    Manifest.permission.ACCESS_COARSE_LOCATION,
+                ),
             )
         }
     }
 
-    SLDeparturesTheme {
+    SlDeparturesTheme {
+        BackHandler(enabled = uiState.wizardStep == MainViewModel.WizardStep.DEPARTURES) {
+            onBackStep()
+        }
         AppScaffold {
             val listState = rememberTransformingLazyColumnState()
             val transformationSpec = rememberTransformationSpec()
@@ -159,7 +160,7 @@ fun DeparturesScreen(
                     SettingsScreen(
                         currentKey = uiState.apiKey,
                         onSave = onSaveApiKey,
-                        onBack = onCloseSettings
+                        onBack = onCloseSettings,
                     )
                 } else if (uiState.isApiKeyMissing) {
                     ApiKeyPrompt(onSave = onSaveApiKey)
@@ -167,114 +168,141 @@ fun DeparturesScreen(
                     TransformingLazyColumn(
                         contentPadding = contentPadding,
                         state = listState,
-                        modifier = Modifier.fillMaxSize()
+                        modifier = Modifier.fillMaxSize(),
                     ) {
-                        if (uiState.selectedStop == null) {
-                            item {
-                                ListHeader(
-                                    modifier = Modifier.fillMaxWidth().transformedHeight(this, transformationSpec),
-                                    transformation = SurfaceTransformation(transformationSpec),
-                                ) {
-                                    Text(
-                                        "Nearby Stops",
-                                        modifier = Modifier.pointerInput(Unit) {
-                                            detectTapGestures(onLongPress = { onLongPressTitle() })
-                                        }
-                                    )
-                                }
-                            }
-
-                            if (favorites.isNotEmpty()) {
+                        when (uiState.wizardStep) {
+                            MainViewModel.WizardStep.PICK_STOPS -> {
                                 item {
                                     ListHeader(
                                         modifier = Modifier.fillMaxWidth().transformedHeight(this, transformationSpec),
                                         transformation = SurfaceTransformation(transformationSpec),
                                     ) {
-                                        Text("Favorites")
+                                        Text("Nearby Stations")
                                     }
                                 }
-                                items(favorites) { stop ->
+
+                                val filteredNearby =
+                                    uiState.nearbyStops.filter { stop ->
+                                        favorites.none { it.id == stop.id || it.name == stop.name }
+                                    }
+
+                                if (uiState.isLoading && filteredNearby.isEmpty() && favorites.isEmpty()) {
+                                    item {
+                                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+                                            CircularProgressIndicator(modifier = Modifier.padding(16.dp))
+                                        }
+                                    }
+                                } else if (uiState.error != null && filteredNearby.isEmpty() && favorites.isEmpty()) {
+                                    item {
+                                        Text(
+                                            uiState.error ?: "Unknown error",
+                                            modifier = Modifier.fillMaxWidth().padding(16.dp),
+                                            textAlign = TextAlign.Center,
+                                            color = MaterialTheme.colorScheme.error,
+                                        )
+                                    }
+                                } else if (!uiState.isLoading && filteredNearby.isEmpty() && favorites.isEmpty()) {
+                                    item {
+                                        Text(
+                                            "No nearby stations found",
+                                            modifier = Modifier.fillMaxWidth().padding(16.dp),
+                                            textAlign = TextAlign.Center,
+                                        )
+                                    }
+                                }
+
+                                items(filteredNearby) { stop ->
                                     StopItem(
-                                        stop = stop,
+                                        stop = stop.copy(isFavorite = false),
                                         onStopClick = { onStopClick(stop) },
-                                        onFavoriteClick = { onFavoriteClick(stop) }
+                                        onFavoriteClick = { onFavoriteClick(stop.copy(isFavorite = false)) },
                                     )
                                 }
-                            }
 
-                            if (uiState.error != null) {
-                                item {
-                                    Text(
-                                        text = uiState.error,
-                                        color = MaterialTheme.colorScheme.error,
-                                        modifier = Modifier.padding(16.dp),
-                                        textAlign = TextAlign.Center
-                                    )
+                                if (favorites.isNotEmpty()) {
+                                    item {
+                                        ListHeader(
+                                            modifier = Modifier.fillMaxWidth().transformedHeight(this, transformationSpec),
+                                            transformation = SurfaceTransformation(transformationSpec),
+                                        ) {
+                                            Text("Favorites")
+                                        }
+                                    }
+                                    items(favorites) { stop ->
+                                        StopItem(
+                                            stop = stop,
+                                            onStopClick = { onStopClick(stop) },
+                                            onFavoriteClick = { onFavoriteClick(stop) },
+                                        )
+                                    }
                                 }
-                            }
 
-                            if (uiState.isLoading && uiState.nearbyStops.isEmpty()) {
                                 item {
-                                    Column(
-                                        horizontalAlignment = Alignment.CenterHorizontally,
-                                        modifier = Modifier.fillMaxWidth()
+                                    Button(
+                                        onClick = { onNext(favorites) },
+                                        enabled = favorites.isNotEmpty(),
+                                        modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
                                     ) {
-                                        CircularProgressIndicator(modifier = Modifier.padding(16.dp))
+                                        Text("View Departures")
                                     }
                                 }
                             }
-
-                            items(uiState.nearbyStops) { stop ->
-                                val isFav = favorites.any { it.id == stop.id }
-                                StopItem(
-                                    stop = stop.copy(isFavorite = isFav),
-                                    onStopClick = { onStopClick(stop) },
-                                    onFavoriteClick = { onFavoriteClick(stop.copy(isFavorite = isFav)) }
-                                )
-                            }
-                        } else {
-                            item {
-                                ListHeader(
-                                    modifier = Modifier.fillMaxWidth().transformedHeight(this, transformationSpec),
-                                    transformation = SurfaceTransformation(transformationSpec),
-                                ) {
-                                    Text(uiState.selectedStop.name)
-                                }
-                            }
-
-                            if (uiState.isLoading) {
+                            MainViewModel.WizardStep.DEPARTURES -> {
                                 item {
-                                    Column(
-                                        horizontalAlignment = Alignment.CenterHorizontally,
-                                        modifier = Modifier.fillMaxWidth()
+                                    ListHeader(
+                                        modifier = Modifier.fillMaxWidth().transformedHeight(this, transformationSpec),
+                                        transformation = SurfaceTransformation(transformationSpec),
                                     ) {
-                                        CircularProgressIndicator(modifier = Modifier.padding(16.dp))
+                                        Text("Departures")
                                     }
                                 }
-                            }
 
-                            items(uiState.departures) { departure ->
-                                DepartureItem(departure = departure)
-                            }
-
-                            item {
-                                Button(
-                                    onClick = onRefreshDepartures,
-                                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
-                                ) {
-                                    Text("Refresh")
+                                if (uiState.isLoading && uiState.departures.isEmpty()) {
+                                    item {
+                                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+                                            CircularProgressIndicator(modifier = Modifier.padding(16.dp))
+                                        }
+                                    }
+                                } else if (uiState.error != null && uiState.departures.isEmpty()) {
+                                    item {
+                                        Text(
+                                            uiState.error ?: "Failed to load",
+                                            modifier = Modifier.fillMaxWidth().padding(16.dp),
+                                            textAlign = TextAlign.Center,
+                                            color = MaterialTheme.colorScheme.error,
+                                        )
+                                    }
+                                } else if (!uiState.isLoading && uiState.departures.isEmpty()) {
+                                    item {
+                                        Text(
+                                            "No departures found",
+                                            modifier = Modifier.fillMaxWidth().padding(16.dp),
+                                            textAlign = TextAlign.Center,
+                                        )
+                                    }
                                 }
-                            }
 
-                            item {
-                                Button(
-                                    onClick = onBack,
-                                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = MaterialTheme.colorScheme.secondaryContainer
-                                    )
-                                ) {
-                                    Text("Back")
+                                items(uiState.departures) { departure ->
+                                    DepartureItem(departure = departure)
+                                }
+
+                                item {
+                                    Button(
+                                        onClick = onRefreshDepartures,
+                                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                                    ) {
+                                        Text("Refresh")
+                                    }
+                                }
+
+                                item {
+                                    Button(
+                                        onClick = onBackStep,
+                                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
+                                    ) {
+                                        Text("Back")
+                                    }
                                 }
                             }
                         }
