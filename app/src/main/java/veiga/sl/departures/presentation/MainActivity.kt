@@ -23,6 +23,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
 import androidx.wear.compose.foundation.lazy.items
 import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
@@ -65,6 +68,23 @@ class MainActivity : ComponentActivity() {
 fun SlWearApp(viewModel: MainViewModel) {
     val uiState = viewModel.uiState
     val favorites by viewModel.favorites.collectAsState()
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    LaunchedEffect(lifecycleOwner) {
+        lifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            viewModel.performAutoRefreshLoop()
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        viewModel.events.collect { event ->
+            when (event) {
+                is MainViewModel.UiEvent.ShowError -> {
+                    // In a real app, maybe show a Toast or a Snackbar equivalent for Wear
+                }
+            }
+        }
+    }
 
     DeparturesScreen(
         uiState = uiState,
@@ -195,12 +215,31 @@ fun DeparturesScreen(
                                     }
                                 } else if (uiState.error != null && filteredNearby.isEmpty() && favorites.isEmpty()) {
                                     item {
-                                        Text(
-                                            uiState.error ?: "Unknown error",
+                                        Column(
+                                            horizontalAlignment = Alignment.CenterHorizontally,
                                             modifier = Modifier.fillMaxWidth().padding(16.dp),
-                                            textAlign = TextAlign.Center,
-                                            color = MaterialTheme.colorScheme.error,
-                                        )
+                                        ) {
+                                            Text(
+                                                uiState.error,
+                                                textAlign = TextAlign.Center,
+                                                color = MaterialTheme.colorScheme.error,
+                                            )
+                                            Button(
+                                                onClick = {
+                                                    val fusedLocationClient = LocationServices.getFusedLocationProviderClient(context)
+                                                    // This is simplified; ideally we'd trigger a refresh in VM that requests location
+                                                    permissionLauncher.launch(
+                                                        arrayOf(
+                                                            Manifest.permission.ACCESS_FINE_LOCATION,
+                                                            Manifest.permission.ACCESS_COARSE_LOCATION,
+                                                        ),
+                                                    )
+                                                },
+                                                modifier = Modifier.padding(top = 8.dp),
+                                            ) {
+                                                Text("Retry")
+                                            }
+                                        }
                                     }
                                 } else if (!uiState.isLoading && filteredNearby.isEmpty() && favorites.isEmpty()) {
                                     item {
@@ -266,12 +305,22 @@ fun DeparturesScreen(
                                     }
                                 } else if (uiState.error != null && uiState.departures.isEmpty()) {
                                     item {
-                                        Text(
-                                            uiState.error ?: "Failed to load",
+                                        Column(
+                                            horizontalAlignment = Alignment.CenterHorizontally,
                                             modifier = Modifier.fillMaxWidth().padding(16.dp),
-                                            textAlign = TextAlign.Center,
-                                            color = MaterialTheme.colorScheme.error,
-                                        )
+                                        ) {
+                                            Text(
+                                                uiState.error,
+                                                textAlign = TextAlign.Center,
+                                                color = MaterialTheme.colorScheme.error,
+                                            )
+                                            Button(
+                                                onClick = onRefreshDepartures,
+                                                modifier = Modifier.padding(top = 8.dp),
+                                            ) {
+                                                Text("Retry")
+                                            }
+                                        }
                                     }
                                 } else if (!uiState.isLoading && uiState.departures.isEmpty()) {
                                     item {

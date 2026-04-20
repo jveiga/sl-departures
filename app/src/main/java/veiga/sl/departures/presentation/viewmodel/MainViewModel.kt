@@ -5,9 +5,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import veiga.sl.departures.data.repository.SLRepository
@@ -20,6 +24,9 @@ class MainViewModel(
 ) : ViewModel() {
     var uiState by mutableStateOf(UiState())
         private set
+
+    private val _events = MutableSharedFlow<UiEvent>()
+    val events = _events.asSharedFlow()
 
     val favorites: StateFlow<List<Stop>> =
         repository
@@ -36,7 +43,12 @@ class MainViewModel(
         val isSettingsOpen: Boolean = false,
         val isApiKeyMissing: Boolean = false,
         val apiKey: String = "",
+        val lastUpdated: Long = 0,
     )
+
+    sealed class UiEvent {
+        data class ShowError(val message: String) : UiEvent()
+    }
 
     enum class WizardStep {
         PICK_STOPS,
@@ -47,7 +59,7 @@ class MainViewModel(
         val key = repository.getApiKey()
         uiState =
             uiState.copy(
-                isApiKeyMissing = false, // We're using a hardcoded key for departures now
+                isApiKeyMissing = false,
                 apiKey = key ?: "",
             )
 
@@ -60,15 +72,17 @@ class MainViewModel(
                 }
             }
         }
+    }
 
-        // Auto-refresh departures every 2 minutes
-        viewModelScope.launch {
-            while (true) {
-                delay(120_000) // 2 minutes
-                if (uiState.wizardStep == WizardStep.DEPARTURES && !uiState.isLoading) {
+    suspend fun performAutoRefreshLoop() {
+        while (true) {
+            if (uiState.wizardStep == WizardStep.DEPARTURES && !uiState.isLoading) {
+                val timeSinceLastUpdate = System.currentTimeMillis() - uiState.lastUpdated
+                if (timeSinceLastUpdate > 60_000) { // Refresh every minute
                     loadAllFavoriteDepartures(favorites.value)
                 }
             }
+            delay(10_000) // Check state every 10 seconds
         }
     }
 
@@ -87,21 +101,38 @@ class MainViewModel(
     }
 
     fun loadAllFavoriteDepartures(favorites: List<Stop>) {
+        if (favorites.isEmpty()) return
+
         viewModelScope.launch {
             uiState = uiState.copy(isLoading = true, error = null)
             try {
-                val allDeps = mutableListOf<Departure>()
-                favorites.forEach { stop ->
-                    try {
-                        val deps = repository.getDepartures(stop.id, stop.name)
-                        allDeps.addAll(deps)
-                    } catch (e: Exception) {
-                        // Silently ignore individual stop failures
+                // Parallelize fetching departures for all favorite stops
+                val deferredDeps =
+                    favorites.map { stop ->
+                        async {
+                            try {
+                                repository.getDepartures(stop.id, stop.name)
+                            } catch (e: Exception) {
+                                emptyList()
+                            }
+                        }
                     }
+
+                val allDeps = deferredDeps.awaitAll().flatten()
+
+                uiState =
+                    uiState.copy(
+                        departures = allDeps,
+                        isLoading = false,
+                        lastUpdated = System.currentTimeMillis(),
+                    )
+
+                if (allDeps.isEmpty() && favorites.isNotEmpty()) {
+                    uiState = uiState.copy(error = "No departures found for your favorites")
                 }
-                uiState = uiState.copy(departures = allDeps, isLoading = false)
             } catch (e: Exception) {
                 uiState = uiState.copy(isLoading = false, error = "Failed to load departures")
+                _events.emit(UiEvent.ShowError("Check your connection and try again"))
             }
         }
     }
