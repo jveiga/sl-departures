@@ -13,7 +13,7 @@ import kotlinx.coroutines.flow.Flow
 @Entity(tableName = "favorite_stops")
 data class FavoriteStopEntity(
     @PrimaryKey val id: String,
-    val name: String
+    val name: String,
 )
 
 @Dao
@@ -26,6 +26,9 @@ interface FavoriteStopDao {
 
     @Query("DELETE FROM favorite_stops WHERE id = :id")
     suspend fun deleteFavorite(id: String)
+
+    @Query("DELETE FROM favorite_stops")
+    suspend fun deleteAll()
 }
 
 @Database(entities = [FavoriteStopEntity::class], version = 1)

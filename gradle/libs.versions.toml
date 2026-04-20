@@ -1,21 +1,22 @@
 [versions]
 agp = "9.1.1"
-playServicesWearable = "18.0.0"
-kotlin = "2.0.21"
-composeBom = "2024.09.00"
-composeMaterial3 = "1.5.6"
-composeFoundation = "1.5.6"
-composeUiTooling = "1.5.6"
+playServicesWearable = "19.0.0"
+kotlin = "2.1.10"
+composeBom = "2026.03.01"
+composeMaterial3 = "1.6.1"
+composeFoundation = "1.6.1"
+composeUiTooling = "1.6.1"
 wearToolingPreview = "1.0.0"
-activityCompose = "1.8.0"
+activityCompose = "1.13.0"
+spotless = "8.4.0"
 coreSplashscreen = "1.2.0"
-composeIcons = "1.7.5"
-retrofit = "2.9.0"
-okhttp = "4.12.0"
-playServicesLocation = "21.0.1"
-kotlinxSerialization = "1.6.3"
-room = "2.7.0-alpha11"
-ksp = "2.0.21-1.0.28"
+composeIcons = "1.7.8"
+retrofit = "3.0.0"
+okhttp = "5.3.2"
+playServicesLocation = "21.3.0"
+kotlinxSerialization = "1.11.0"
+room = "2.8.4"
+ksp = "2.1.10-1.0.31"
 securityCrypto = "1.1.0"
 
 [libraries]
@@ -36,7 +37,7 @@ core-splashscreen = { group = "androidx.core", name = "core-splashscreen", versi
 compose-icons-core = { group = "androidx.compose.material", name = "material-icons-core", version.ref = "composeIcons" }
 compose-icons-extended = { group = "androidx.compose.material", name = "material-icons-extended", version.ref = "composeIcons" }
 retrofit = { group = "com.squareup.retrofit2", name = "retrofit", version.ref = "retrofit" }
-retrofit-serialization = { group = "com.jakewharton.retrofit", name = "retrofit2-kotlinx-serialization-converter", version = "1.0.0" }
+retrofit-serialization = { group = "com.squareup.retrofit2", name = "converter-kotlinx-serialization", version.ref = "retrofit" }
 okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
 okhttp-logging = { group = "com.squareup.okhttp3", name = "logging-interceptor", version.ref = "okhttp" }
 play-services-location = { group = "com.google.android.gms", name = "play-services-location", version.ref = "playServicesLocation" }
@@ -51,4 +52,5 @@ android-application = { id = "com.android.application", version.ref = "agp" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
+spotless = { id = "com.diffplug.spotless", version.ref = "spotless" }
 
