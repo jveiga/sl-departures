@@ -1,5 +1,6 @@
 package veiga.sl.departures.data.repository
 
+import android.util.Log
 import java.time.Duration
 import java.time.Instant
 import java.time.OffsetDateTime
@@ -26,6 +27,10 @@ class SLRepository(
             entities.map { Stop(it.id, it.name, isFavorite = true) }
         }
 
+    fun hasApiKeys(): Boolean {
+        return resrobotApiKey.isNotBlank() && departuresApiKey.isNotBlank()
+    }
+
     suspend fun getNearbyStops(
         lat: Double,
         lon: Double,
@@ -41,31 +46,33 @@ class SLRepository(
                 return stops.map { Stop(it.extId, it.name, it.dist) }.distinctBy { it.name }
             }
         } catch (e: Exception) {
-            // Silently fail
+            Log.e("SLRepository", "Resrobot nearby stops failed", e)
         }
 
         // Fallback to SL nearbystops
         val slApiKey = preferences.getApiKey() ?: ""
-        val endpoints =
-            listOf(
-                "https://api.trafiklab.se/sl/nearbystops/v2/nearbystops.json",
-                "https://api.trafiklab.se/sl/nearbystops/nearbystops.json",
-            )
+        if (slApiKey.isNotBlank()) {
+            val endpoints =
+                listOf(
+                    "https://api.trafiklab.se/sl/nearbystops/v2/nearbystops.json",
+                    "https://api.trafiklab.se/sl/nearbystops/nearbystops.json",
+                )
 
-        for (url in endpoints) {
-            try {
-                val response = api.getNearbyStops(url, slApiKey, lat, lon)
-                if (response.LocationList?.StopLocation != null) {
-                    return response.LocationList.StopLocation.map {
-                        Stop(it.siteid, it.name, it.dist)
+            for (url in endpoints) {
+                try {
+                    val response = api.getNearbyStops(url, slApiKey, lat, lon)
+                    if (response.LocationList?.StopLocation != null) {
+                        return response.LocationList.StopLocation.map {
+                            Stop(it.siteid, it.name, it.dist)
+                        }
                     }
+                } catch (e: Exception) {
+                    Log.e("SLRepository", "SL nearby stops failed for $url", e)
                 }
-            } catch (e: Exception) {
-                // Silently fail
             }
         }
 
-        throw Exception("Could not fetch nearby stops from any source")
+        throw Exception("Could not fetch nearby stops from any source. Check your internet connection or API keys.")
     }
 
     suspend fun getDepartures(
@@ -100,11 +107,11 @@ class SLRepository(
                     )
                 }
             }
+            throw Exception("No departures found for $stopName")
         } catch (e: Exception) {
-            throw e
+            Log.e("SLRepository", "Departures fetch failed for $siteId", e)
+            throw Exception("Failed to fetch departures: ${e.localizedMessage ?: "Unknown error"}")
         }
-
-        return emptyList()
     }
 
     private fun calculateRemainingTime(isoTime: String): String? {

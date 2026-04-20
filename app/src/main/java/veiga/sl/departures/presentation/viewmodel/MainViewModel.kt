@@ -56,19 +56,16 @@ class MainViewModel(
     }
 
     init {
-        val key = repository.getApiKey()
-        uiState =
-            uiState.copy(
-                isApiKeyMissing = false,
-                apiKey = key ?: "",
-            )
+        uiState = uiState.copy(isApiKeyMissing = !repository.hasApiKeys())
 
-        // Auto-load departures if favorites exist
-        viewModelScope.launch {
-            favorites.collect { favoriteStops ->
-                if (favoriteStops.isNotEmpty() && uiState.wizardStep == WizardStep.PICK_STOPS && uiState.departures.isEmpty()) {
-                    uiState = uiState.copy(wizardStep = WizardStep.DEPARTURES)
-                    loadAllFavoriteDepartures(favoriteStops)
+        if (!uiState.isApiKeyMissing) {
+            // Auto-load departures if favorites exist
+            viewModelScope.launch {
+                favorites.collect { favoriteStops ->
+                    if (favoriteStops.isNotEmpty() && uiState.wizardStep == WizardStep.PICK_STOPS && uiState.departures.isEmpty()) {
+                        uiState = uiState.copy(wizardStep = WizardStep.DEPARTURES)
+                        loadAllFavoriteDepartures(favoriteStops)
+                    }
                 }
             }
         }
